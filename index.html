@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NumberQuest Game</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 600px;
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            text-align: center;
+            color: #fff;
+            margin-bottom: 20px;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        .info-box, .guess-box, .rules-box, .log-box {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+        }
+        .info-box p, .log-box p, .rules-box p {
+            margin: 10px 0;
+            font-size: 1.1em;
+        }
+        .guess-box {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+        }
+        input[type="number"] {
+            padding: 10px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            width: 100px;
+            background: #fff;
+            color: #333;
+        }
+        button {
+            padding: 12px 25px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            background: linear-gradient(45deg, #ff6b6b, #ff8e53);
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.3s;
+        }
+        button:hover {
+            transform: scale(1.05);
+            background: linear-gradient(45deg, #ff8e53, #ff6b6b);
+        }
+        .copy-button {
+            padding: 5px 10px;
+            font-size: 0.9em;
+            margin-left: 10px;
+            background: linear-gradient(45deg, #66bb6a, #81c784);
+        }
+        #result {
+            text-align: center;
+            margin-top: 20px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        .log-box, .rules-box {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .log-entry, .rules-box p {
+            padding: 5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .rules-box p:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NumberQuest Game</h1>
+        <div class="info-box">
+            <button onclick="connectWallet()">Connect Wallet</button>
+            <p>Wallet: <span id="walletAddress">Not connected</span></p>
+            <p>Your Level: <span id="playerLevel">0</span></p>
+            <p>Guess Count: <span id="guessCount">0</span></p>
+            <p>Last Guess: <span id="lastGuess">Never</span></p>
+            <p>Contract Balance: <span id="contractBalance">0 tAI3</span></p>
+            <p>Contract Address: <span id="contractAddress">0xc833...4f36</span>
+                <button class="copy-button" onclick="copyContractAddress()">Copy</button></p>
+        </div>
+        <div class="guess-box">
+            <input type="number" id="guessNumber" min="1" max="10" placeholder="1-10">
+            <button onclick="makeGuess()">Guess</button>
+        </div>
+        <div class="rules-box">
+            <p><strong>Game Rules (游戏规则):</strong></p>
+            <p>1. Connect your wallet and guess a number between 1-10. Each guess costs 0.01 tAI3.<br>连接钱包，猜测1-10之间的数字，每次猜测花费0.01 tAI3。</p>
+            <p>2. If you guess correctly, your level increases by 1 (up to 100), and you win a reward.<br>猜对后，等级提升1级（最高100级），并获得奖励。</p>
+            <p>3. Rewards: Level 1 = 0.015 tAI3, Level 100 = 0.05 tAI3, increasing linearly.<br>奖励：1级0.015 tAI3，100级0.05 tAI3，线性递增。</p>
+            <p>4. If the contract balance is low, send tAI3 to the contract address to continue the game.<br>如果合约余额不足，可向合约地址转账tAI3以继续游戏。</p>
+        </div>
+        <p id="result"></p>
+        <div class="log-box">
+            <p><strong>Recent Guesses:</strong></p>
+            <div id="guessLogs"></div>
+        </div>
+    </div>
+
+    <!-- 加载 Web3.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.7.4/dist/web3.min.js"></script>
+    <script>
+        // 合约地址和 ABI
+        const contractAddress = "0xc8336fecc298af376d2e15a4aa6aba7c016a4f36";
+        const contractABI = [
+            {"inputs":[],"stateMutability":"payable","type":"constructor"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"funder","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Funded","type":"event"},
+            {"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"player","type":"address"},{"indexed":false,"internalType":"uint256","name":"guess","type":"uint256"},{"indexed":false,"internalType":"bool","name":"success","type":"bool"},{"indexed":false,"internalType":"uint256","name":"newLevel","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"reward","type":"uint256"}],"name":"GuessResult","type":"event"},
+            {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Withdrawal","type":"event"},
+            {"inputs":[],"name":"getContractBalance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"address","name":"_player","type":"address"}],"name":"getExplorerInfo","outputs":[{"internalType":"uint256","name":"level","type":"uint256"},{"internalType":"uint256","name":"guessCount","type":"uint256"},{"internalType":"uint256","name":"lastGuess","type":"uint256"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"uint256","name":"_number","type":"uint256"}],"name":"guess","outputs":[],"stateMutability":"payable","type":"function"},
+            {"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+            {"inputs":[{"internalType":"uint256","name":"_amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+            {"stateMutability":"payable","type":"receive"}
+        ];
+
+        let web3 = new Web3("https://auto-evm-0.taurus.subspace.network/ws");
+        let contract = new web3.eth.Contract(contractABI, contractAddress);
+        let account;
+
+        // 初始化时更新合约余额
+        updateContractBalance();
+
+        // 连接钱包
+        async function connectWallet() {
+            if (window.ethereum) {
+                web3 = new Web3(window.ethereum);
+                try {
+                    await window.ethereum.request({ method: "eth_requestAccounts" });
+                    account = (await web3.eth.getAccounts())[0];
+                    document.getElementById("walletAddress").innerText = account.slice(0, 6) + "..." + account.slice(-4);
+                    contract = new web3.eth.Contract(contractABI, contractAddress);
+                    updatePlayerInfo();
+                    updateContractBalance();
+                    listenForEvents();
+                } catch (error) {
+                    console.error("Connection failed:", error);
+                    alert("Failed to connect wallet");
+                }
+            } else {
+                alert("Please install MetaMask!");
+            }
+        }
+
+        // 更新玩家信息
+        async function updatePlayerInfo() {
+            if (contract && account) {
+                const info = await contract.methods.getExplorerInfo(account).call();
+                document.getElementById("playerLevel").innerText = info[0];
+                document.getElementById("guessCount").innerText = info[1];
+                document.getElementById("lastGuess").innerText = info[2] == 0 ? "Never" : new Date(info[2] * 1000).toLocaleString();
+            }
+        }
+
+        // 更新合约余额
+        async function updateContractBalance() {
+            try {
+                const balance = await contract.methods.getContractBalance().call();
+                document.getElementById("contractBalance").innerText = web3.utils.fromWei(balance, "ether") + " tAI3";
+            } catch (error) {
+                console.error("Failed to get contract balance:", error);
+                document.getElementById("contractBalance").innerText = "Error loading balance";
+            }
+        }
+
+        // 提交猜测
+        async function makeGuess() {
+            if (!contract || !account) {
+                alert("Please connect wallet first!");
+                return;
+            }
+            const guessNumber = document.getElementById("guessNumber").value;
+            if (!guessNumber || guessNumber < 1 || guessNumber > 10) {
+                alert("Please enter a number between 1 and 10");
+                return;
+            }
+
+            try {
+                document.getElementById("result").innerText = "Guessing...";
+                const tx = await contract.methods.guess(guessNumber).send({
+                    from: account,
+                    value: web3.utils.toWei("0.01", "ether"),
+                    gas: 300000
+                });
+                const success = tx.events.GuessResult.returnValues.success;
+                const reward = success ? web3.utils.fromWei(tx.events.GuessResult.returnValues.reward, "ether") : "0";
+                document.getElementById("result").innerText = success
+                    ? `Success! Won ${reward} tAI3, New Level: ${tx.events.GuessResult.returnValues.newLevel}`
+                    : "Wrong guess, try again!";
+                updatePlayerInfo();
+                updateContractBalance();
+            } catch (error) {
+                console.error("Guess failed:", error);
+                document.getElementById("result").innerText = "Guess failed: " + (error.message || "Unknown error");
+            }
+        }
+
+        // 监听 GuessResult 事件
+        function listenForEvents() {
+            contract.events.GuessResult({ fromBlock: "latest" })
+                .on("data", (event) => {
+                    const { player, guess, success, newLevel, reward } = event.returnValues;
+                    const rewardInTAI3 = web3.utils.fromWei(reward, "ether");
+                    const logEntry = document.createElement("div");
+                    logEntry.className = "log-entry";
+                    logEntry.innerText = `${player.slice(0, 6)}...${player.slice(-4)} guessed ${guess}: ${success ? `Won ${rewardInTAI3} tAI3, Level ${newLevel}` : "Failed"}`;
+                    document.getElementById("guessLogs").prepend(logEntry);
+                })
+                .on("error", console.error);
+        }
+
+        // 复制合约地址
+        function copyContractAddress() {
+            const fullAddress = "0xc8336fecc298af376d2e15a4aa6aba7c016a4f36"; // 完整地址用于复制
+            navigator.clipboard.writeText(fullAddress).then(() => {
+                alert("Contract address copied to clipboard!");
+            }).catch((error) => {
+                console.error("Copy failed:", error);
+                alert("Failed to copy address");
+            });
+        }
+    </script>
+</body>
+</html>
